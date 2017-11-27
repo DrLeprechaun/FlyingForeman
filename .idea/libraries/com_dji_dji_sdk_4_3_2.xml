@@ -1,8 +1,8 @@
 <component name="libraryTable">
   <library name="com.dji:dji-sdk-4.3.2">
     <CLASSES>
-      <root url="jar://$USER_HOME$/.gradle/caches/transforms-1/files-1.1/dji-sdk-4.3.2.aar/e2ceb0ea37a5d2d763b2ccc45a219805/jars/classes.jar!/" />
-      <root url="file://$USER_HOME$/.gradle/caches/transforms-1/files-1.1/dji-sdk-4.3.2.aar/e2ceb0ea37a5d2d763b2ccc45a219805/res" />
+      <root url="jar://$USER_HOME$/.gradle/caches/transforms-1/files-1.1/dji-sdk-4.3.2.aar/8a1ee5e961eb1dcdc6f548ea362df119/jars/classes.jar!/" />
+      <root url="file://$USER_HOME$/.gradle/caches/transforms-1/files-1.1/dji-sdk-4.3.2.aar/8a1ee5e961eb1dcdc6f548ea362df119/res" />
     </CLASSES>
     <JAVADOC />
     <SOURCES />

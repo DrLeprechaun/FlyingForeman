@@ -1,124 +1,147 @@
 package com.gakeko.flyingforeman;
 
-import dji.sdk.sdkmanager.DJISDKManager;
-
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.net.ServerSocket;
-import java.net.Socket;
-
-import android.app.Activity;
-import android.os.Bundle;
-import android.os.Handler;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
+import android.util.Log;
+import android.view.View;
+import android.widget.Toast;
 import android.widget.TextView;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+
+import org.java_websocket.WebSocket;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+
+import io.reactivex.FlowableTransformer;
+import io.reactivex.android.schedulers.AndroidSchedulers;
+import io.reactivex.disposables.Disposable;
+import io.reactivex.schedulers.Schedulers;
+import com.gakeko.lib.Stomp;
+import com.gakeko.lib.client.StompClient;
+
+import static com.gakeko.flyingforeman.RestClient.ANDROID_EMULATOR_LOCALHOST;
 
 public class MainActivity extends AppCompatActivity {
 
-    private ServerSocket serverSocket;
-    Handler updateConversationHandler;
-    Thread serverThread = null;
-    private TextView text;
-    public static final int SERVERPORT = 6000;
+    private static final String TAG = "MainActivity";
+    private TextView debugText;
+
+    private SimpleAdapter mAdapter;
+    private List<String> mDataSet = new ArrayList<>();
+    private StompClient mStompClient;
+    private Disposable mRestPingDisposable;
+    private final SimpleDateFormat mTimeFormat = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
+    private RecyclerView mRecyclerView;
+    private Gson mGson = new GsonBuilder().create();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        debugText = (TextView) findViewById(R.id.debugText);
+        mRecyclerView = (RecyclerView) findViewById(R.id.recycler_view);
+        mAdapter = new SimpleAdapter(mDataSet);
+        mAdapter.setHasStableIds(true);
+        mRecyclerView.setAdapter(mAdapter);
+        mRecyclerView.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, true));
+    }
 
-        text = (TextView) findViewById(R.id.text2);
+    public void disconnectStomp(View view) {
+        mStompClient.disconnect();
+    }
 
-        updateConversationHandler = new Handler();
+    public void connectStomp(View view) {
+        //debugText.setText("connectStomp");
+        mStompClient = Stomp.over(WebSocket.class, "ws://" + ANDROID_EMULATOR_LOCALHOST
+                + ":" + RestClient.SERVER_PORT + "/example-endpoint/websocket");
 
-       this.serverThread = new Thread(new ServerThread());
-        this.serverThread.start();
+        mStompClient.lifecycle()
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(lifecycleEvent -> {
+                    switch (lifecycleEvent.getType()) {
+                        case OPENED:
+                            toast("Stomp connection opened");
+                            debugText.setText("Stomp connection opened");
+                            break;
+                        case ERROR:
+                            Log.e(TAG, "Stomp connection error", lifecycleEvent.getException());
+                            toast("Stomp connection error");
+                            debugText.setText("Stomp connection error");
+                            break;
+                        case CLOSED:
+                            toast("Stomp connection closed");
+                            debugText.setText("Stomp connection closed");
+                            break;
+                    }
+                });
+
+        // Receive greetings
+        mStompClient.topic("/topic/greetings")
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(topicMessage -> {
+                    Log.d(TAG, "Received " + topicMessage.getPayload());
+                    addItem(mGson.fromJson(topicMessage.getPayload(), EchoModel.class));
+                });
+
+        mStompClient.connect();
+    }
+
+    public void sendEchoViaStomp(View v) {
+        mStompClient.send("/topic/hello-msg-mapping", "Echo STOMP " + mTimeFormat.format(new Date()))
+                .compose(applySchedulers())
+                .subscribe(aVoid -> {
+                    Log.d(TAG, "STOMP echo send successfully");
+                }, throwable -> {
+                    Log.e(TAG, "Error send STOMP echo", throwable);
+                    toast(throwable.getMessage());
+                });
+    }
+
+    public void sendEchoViaRest(View v) {
+        mRestPingDisposable = RestClient.getInstance().getExampleRepository()
+                .sendRestEcho("Echo REST " + mTimeFormat.format(new Date()))
+                .compose(applySchedulers())
+                .subscribe(aVoid -> {
+                    Log.d(TAG, "REST echo send successfully");
+                }, throwable -> {
+                    Log.e(TAG, "Error send REST echo", throwable);
+                    toast(throwable.getMessage());
+                });
+    }
+
+    private void addItem(EchoModel echoModel) {
+        mDataSet.add(echoModel.getEcho() + " - " + mTimeFormat.format(new Date()));
+        mAdapter.notifyDataSetChanged();
+        mRecyclerView.smoothScrollToPosition(mDataSet.size() - 1);
+    }
+
+    private void toast(String text) {
+        Log.i(TAG, text);
+        Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
+    }
+
+    protected <T> FlowableTransformer<T, T> applySchedulers() {
+        return tFlowable -> tFlowable
+                .unsubscribeOn(Schedulers.newThread())
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread());
     }
 
     @Override
-    protected void onStop() {
-        super.onStop();
-        try {
-            serverSocket.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    class ServerThread implements Runnable {
-
-        public void run() {
-            Socket socket = null;
-            try {
-                serverSocket = new ServerSocket(SERVERPORT);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            while (!Thread.currentThread().isInterrupted()) {
-
-                try {
-
-                    socket = serverSocket.accept();
-
-                    CommunicationThread commThread = new CommunicationThread(socket);
-                    new Thread(commThread).start();
-
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-    }
-
-    class CommunicationThread implements Runnable {
-
-        private Socket clientSocket;
-
-        private BufferedReader input;
-
-        public CommunicationThread(Socket clientSocket) {
-
-            this.clientSocket = clientSocket;
-
-            try {
-
-                this.input = new BufferedReader(new InputStreamReader(this.clientSocket.getInputStream()));
-
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-
-        public void run() {
-
-            while (!Thread.currentThread().isInterrupted()) {
-
-                try {
-
-                    String read = input.readLine();
-
-                    updateConversationHandler.post(new updateUIThread(read));
-
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-
-    }
-
-    class updateUIThread implements Runnable {
-        private String msg;
-
-        public updateUIThread(String str) {
-            this.msg = str;
-        }
-
-        @Override
-        public void run() {
-            text.setText(text.getText().toString()+"Client Says: "+ msg + "\n");
-        }
+    protected void onDestroy() {
+        mStompClient.disconnect();
+        if (mRestPingDisposable != null) mRestPingDisposable.dispose();
+        super.onDestroy();
     }
 }
