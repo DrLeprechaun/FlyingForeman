@@ -91,6 +91,7 @@ public class MainActivity extends AppCompatActivity {
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(topicMessage -> {
                     Log.d(TAG, "Received " + topicMessage.getPayload());
+                    debugText.setText(topicMessage.toString());
                     addItem(mGson.fromJson(topicMessage.getPayload(), EchoModel.class));
                 });
 
@@ -101,8 +102,10 @@ public class MainActivity extends AppCompatActivity {
         mStompClient.send("/topic/hello-msg-mapping", "Echo STOMP " + mTimeFormat.format(new Date()))
                 .compose(applySchedulers())
                 .subscribe(aVoid -> {
+                    debugText.setText("STOMP echo send successfully");
                     Log.d(TAG, "STOMP echo send successfully");
                 }, throwable -> {
+                    debugText.setText("Error send STOMP echo");
                     Log.e(TAG, "Error send STOMP echo", throwable);
                     toast(throwable.getMessage());
                 });
