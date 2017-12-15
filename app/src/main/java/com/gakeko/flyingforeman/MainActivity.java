@@ -30,6 +30,8 @@ import com.gakeko.lib.client.StompClient;
 
 import static com.gakeko.flyingforeman.RestClient.ANDROID_EMULATOR_LOCALHOST;
 
+import com.gakeko.flyingforeman.MockCommandHandler;
+
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
@@ -56,12 +58,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void disconnectStomp(View view) {
+        debugText.setText("Stomp connection closed");
         mStompClient.disconnect();
     }
 
     public void connectStomp(View view) {
-        //debugText.setText("connectStomp");
-        mStompClient = Stomp.over(WebSocket.class, "ws://" + ANDROID_EMULATOR_LOCALHOST
+        //mStompClient = Stomp.over(WebSocket.class, "ws://" + ANDROID_EMULATOR_LOCALHOST
+        mStompClient = Stomp.over(WebSocket.class, "ws://178.63.57.162"
                 + ":" + RestClient.SERVER_PORT + "/example-endpoint/websocket");
 
         mStompClient.lifecycle()
@@ -91,7 +94,8 @@ public class MainActivity extends AppCompatActivity {
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(topicMessage -> {
                     Log.d(TAG, "Received " + topicMessage.getPayload());
-                    debugText.setText(topicMessage.toString());
+                    //debugText.setText("Received " + topicMessage.getPayload());
+                    debugText.setText( new MockCommandHandler(topicMessage.getPayload()).getResponse());
                     addItem(mGson.fromJson(topicMessage.getPayload(), EchoModel.class));
                 });
 
@@ -116,8 +120,10 @@ public class MainActivity extends AppCompatActivity {
                 .sendRestEcho("Echo REST " + mTimeFormat.format(new Date()))
                 .compose(applySchedulers())
                 .subscribe(aVoid -> {
+                    debugText.setText("REST echo send successfully");
                     Log.d(TAG, "REST echo send successfully");
                 }, throwable -> {
+                    debugText.setText("Error send REST echo");
                     Log.e(TAG, "Error send REST echo", throwable);
                     toast(throwable.getMessage());
                 });
